@@ -42,17 +42,46 @@ if command -v unzstd >/dev/null 2>&1; then
     # curl -L --fail: fail on HTTP errors (404 etc)
     # pv: progress bar if available, else cat (or skip if not installed, but assumed in apt list)
     if command -v pv >/dev/null 2>&1; then
-        curl -L --fail "$DATA_URL" | pv | tar --use-compress-program=unzstd -x -C "$TARGET_DIR"
-    else
-        curl -L --fail "$DATA_URL" | tar --use-compress-program=unzstd -x -C "$TARGET_DIR"
-    fi
+    echo "Decompression Method: tar --use-compress-program=unzstd"
+    TAR_DECOMPRESS_OPT="--use-compress-program=unzstd"
+    DECOMPRESS_CMD="cat" # No separate pipe needed, tar handles it
 else
-    echo "Method: zstd -dc | tar -x (fallback)"
-    if command -v pv >/dev/null 2>&1; then
-        curl -L --fail "$DATA_URL" | pv | zstd -dc | tar -x -C "$TARGET_DIR"
-    else
-        curl -L --fail "$DATA_URL" | zstd -dc | tar -x -C "$TARGET_DIR"
+    echo "Decompression Method: zstd -dc (fallback)"
+    DECOMPRESS_CMD="zstd -dc"
+    TAR_DECOMPRESS_OPT="" # tar -x will handle it after zstd -dc
+fi
+
+# Determine PV command (for progress bar)
+PV_CMD="cat" # Default to cat (no-op)
+if command -v pv >/dev/null 2>&1; then
+    PV_CMD="pv"
+fi
+
+# 4. Download & Extract with Fallback
+# Determine Download Method
+if [[ "$DATA_URL" == *"drive.google.com"* ]]; then
+    echo "Detected Google Drive URL. Using gdown..."
+    
+    # Ensure gdown is installed
+    if ! command -v gdown &>/dev/null; then
+        echo "gdown not found. Installing via pip..."
+        pip install gdown
     fi
+
+    # Stream download: gdown -> stdout -> pv -> decompress -> tar -> disk
+    # gdown -O - writes to stdout
+    gdown "$DATA_URL" -O - --quiet \
+        | $PV_CMD \
+        | $DECOMPRESS_CMD \
+        | tar $TAR_DECOMPRESS_OPT -x -C "$TARGET_DIR"
+
+else
+    echo "Detected standard URL. Using curl..."
+    # Standard HTTP/HTTPS
+    curl -L --fail "$DATA_URL" \
+        | $PV_CMD \
+        | $DECOMPRESS_CMD \
+        | tar $TAR_DECOMPRESS_OPT -x -C "$TARGET_DIR"
 fi
 
 # 5. Mark Complete
