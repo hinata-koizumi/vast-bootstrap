@@ -34,48 +34,44 @@ fi
 
 echo "Downloading from: $DATA_URL"
 
-# 4. Download & Extract with Fallback
-# We use a subshell or simple if/else logic for fallback.
-# Check for unzstd availability for the 'nice' tar command.
+# 4. Configure Extraction Tools
+# Determine whether to use zstd pipe or tar's internal option
 if command -v unzstd >/dev/null 2>&1; then
-    echo "Method: tar --use-compress-program=unzstd"
-    # curl -L --fail: fail on HTTP errors (404 etc)
-    # pv: progress bar if available, else cat (or skip if not installed, but assumed in apt list)
-    if command -v pv >/dev/null 2>&1; then
     echo "Decompression Method: tar --use-compress-program=unzstd"
     TAR_DECOMPRESS_OPT="--use-compress-program=unzstd"
-    DECOMPRESS_CMD="cat" # No separate pipe needed, tar handles it
+    DECOMPRESS_CMD="cat" # Pass through (no-op)
 else
     echo "Decompression Method: zstd -dc (fallback)"
+    TAR_DECOMPRESS_OPT="" 
     DECOMPRESS_CMD="zstd -dc"
-    TAR_DECOMPRESS_OPT="" # tar -x will handle it after zstd -dc
 fi
 
-# Determine PV command (for progress bar)
-PV_CMD="cat" # Default to cat (no-op)
+# Determine PV command
 if command -v pv >/dev/null 2>&1; then
     PV_CMD="pv"
+else
+    PV_CMD="cat"
 fi
 
-# 4. Download & Extract with Fallback
-# Determine Download Method
+# 5. Download & Extract
 if [[ "$DATA_URL" == *"drive.google.com"* ]]; then
     echo "Detected Google Drive URL. Using gdown..."
     
-    # Ensure gdown is installed
+    # Ensure gdown is installed (use python -m pip for venv safety)
     if ! command -v gdown &>/dev/null; then
         echo "gdown not found. Installing via pip..."
-        pip install gdown
+        python -m pip install gdown
     fi
 
-    # Download to temporary file (more robust than stdout for Drive)
+    # Download to temporary file
     TEMP_ARCHIVE="$TARGET_DIR/temp_dataset.tar.zst"
     echo "Downloading to $TEMP_ARCHIVE..."
     
     if gdown "$DATA_URL" -O "$TEMP_ARCHIVE"; then
         echo "Download successful. Extracting..."
         
-        # Extract from file
+        # Extract logic: 
+        # file -> pv -> [zstd -dc] -> tar [opts]
         $PV_CMD "$TEMP_ARCHIVE" \
             | $DECOMPRESS_CMD \
             | tar $TAR_DECOMPRESS_OPT -x -C "$TARGET_DIR"
@@ -89,7 +85,7 @@ if [[ "$DATA_URL" == *"drive.google.com"* ]]; then
 
 else
     echo "Detected standard URL. Using curl..."
-    # Standard HTTP/HTTPS
+    # Curl stream: curl -> pv -> [zstd -dc] -> tar [opts]
     curl -L --fail "$DATA_URL" \
         | $PV_CMD \
         | $DECOMPRESS_CMD \
