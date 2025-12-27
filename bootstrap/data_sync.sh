@@ -34,17 +34,18 @@ fi
 
 echo "Downloading from: $DATA_URL"
 
-# 4. Configure Extraction Tools
-# Determine whether to use zstd pipe or tar's internal option
-if command -v unzstd >/dev/null 2>&1; then
-    echo "Decompression Method: tar --use-compress-program=unzstd"
-    TAR_DECOMPRESS_OPT="--use-compress-program=unzstd"
-    DECOMPRESS_CMD="cat" # Pass through (no-op)
-else
-    echo "Decompression Method: zstd -dc (fallback)"
-    TAR_DECOMPRESS_OPT="" 
-    DECOMPRESS_CMD="zstd -dc"
-fi
+# 4. Configure Extraction Function
+# Robust extraction function that reads from Stdin
+extract_stream() {
+    # Usage: some_stream | extract_stream
+    if command -v unzstd >/dev/null 2>&1; then
+        echo "Decompression: tar (unzstd)"
+        tar --use-compress-program=unzstd -x -C "$TARGET_DIR" --no-same-owner
+    else
+        echo "Decompression: zstd pipe"
+        zstd -dc | tar -x -C "$TARGET_DIR" --no-same-owner
+    fi
+}
 
 # Determine PV command
 if command -v pv >/dev/null 2>&1; then
@@ -63,36 +64,38 @@ if [[ "$DATA_URL" == *"drive.google.com"* ]]; then
         python -m pip install gdown
     fi
 
-    # Download to temporary file
-    TEMP_ARCHIVE="$TARGET_DIR/temp_dataset.tar.zst"
+    # Download to temporary file (in target dir to ensure same filesystem)
+    # Using mktemp for safety
+    TEMP_ARCHIVE=$(mktemp -p "$TARGET_DIR" dataset.XXXXXX.tar.zst)
     echo "Downloading to $TEMP_ARCHIVE..."
     
     if gdown "$DATA_URL" -O "$TEMP_ARCHIVE"; then
         echo "Download successful. Extracting..."
         
-        # Extract logic: 
-        # file -> pv -> [zstd -dc] -> tar [opts]
-        $PV_CMD "$TEMP_ARCHIVE" \
-            | $DECOMPRESS_CMD \
-            | tar $TAR_DECOMPRESS_OPT -x -C "$TARGET_DIR"
-            
-        # Cleanup
-        rm -f "$TEMP_ARCHIVE"
+        # Extract from file -> pv -> extract_stream
+        if $PV_CMD "$TEMP_ARCHIVE" | extract_stream; then
+            echo "Extraction successful."
+            rm -f "$TEMP_ARCHIVE"
+        else
+            echo "ERROR: Extraction failed."
+            rm -f "$TEMP_ARCHIVE"
+            exit 1
+        fi
     else
         echo "ERROR: gdown failed."
+        rm -f "$TEMP_ARCHIVE"
         exit 1
     fi
 
 else
     echo "Detected standard URL. Using curl..."
-    # Curl stream: curl -> pv -> [zstd -dc] -> tar [opts]
+    # Curl stream: curl -> pv -> extract_stream
     curl -L --fail "$DATA_URL" \
         | $PV_CMD \
-        | $DECOMPRESS_CMD \
-        | tar $TAR_DECOMPRESS_OPT -x -C "$TARGET_DIR"
+        | extract_stream
 fi
 
-# 5. Mark Complete
+# 6. Mark Complete
 # Only reached if the commands above succeeded (set -e)
 touch "$SENTINEL"
 echo "SUCCESS: Data sync completed."
