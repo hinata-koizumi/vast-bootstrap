@@ -13,6 +13,8 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 
 echo "=== [bootstrap.sh] Starting Setup @ $(date) ==="
 echo "Repo Root: $REPO_ROOT"
+# Default Data URL (Google Drive)
+export DATA_URL="${DATA_URL:-https://drive.google.com/uc?export=download&id=1QbywOSchU-kiVut1h5tOBbEbngWljWO4}"
 
 # --- 1. PERSISTENCE & MOUNTS ---
 # Using absolute path via SCRIPT_DIR

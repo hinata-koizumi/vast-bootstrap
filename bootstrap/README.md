@@ -4,7 +4,7 @@
 
 **1. Vast.ai UI "On-start script"** (Copy & Edit vars):
 ```bash
-export DATA_URL="https://your-server.com/datasets/NYUv2.tar.zst"
+export DATA_URL="https://drive.google.com/uc?export=download&id=1QbywOSchU-kiVut1h5tOBbEbngWljWO4"
 export AUTO_START=1
 export REPO_DIR="repo"
 
@@ -55,7 +55,7 @@ Replace `YOUR_REPO_URL` and `DATA_URL`.
 
 ```bash
 # Vast.ai Startup One-Liner
-export DATA_URL="https://your-server.com/datasets/NYUv2.tar.zst"
+export DATA_URL="https://drive.google.com/uc?export=download&id=1QbywOSchU-kiVut1h5tOBbEbngWljWO4"
 export AUTO_START=1
 # Optional: export BRANCH="feature/foo"
 export REPO_DIR="repo"

@@ -4,6 +4,7 @@ set -e
 # === Configuration ===
 # You can hardcode this or pass it as an arg/env
 REPO_URL="${REPO_URL:-https://github.com/your-username/your-repo.git}"
+DATA_URL="${DATA_URL:-https://drive.google.com/uc?export=download&id=1QbywOSchU-kiVut1h5tOBbEbngWljWO4}"
 BRANCH="${BRANCH:-main}"
 
 if [ "$#" -lt 1 ]; then
