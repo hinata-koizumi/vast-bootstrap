@@ -115,7 +115,7 @@ These control the behavior of `bootstrap.sh` and `start_services.sh`.
 ### Core
 | Variable | Default | Description |
 | :--- | :--- | :--- |
-| `DATA_URL` | *(Required)* | URL to a `tar.zst` dataset file. |
+| `DATA_URL` | *(Required)* | URL to a `tar.zst` dataset file. Supports direct links and Google Drive. <br> **Note**: Google Drive links may fail if the daily download quota is exceeded. |
 | `DATASET_NAME`| `NYUv2` | Name of folder in `~/datasets/`. |
 | `BRANCH` | `main` | Git branch to checkout (used by vast_up/UI script). |
 | `REPO_DIR` | `repo` | Local directory name for the cloned repo. |

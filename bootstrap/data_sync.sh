@@ -68,12 +68,24 @@ if [[ "$DATA_URL" == *"drive.google.com"* ]]; then
         pip install gdown
     fi
 
-    # Stream download: gdown -> stdout -> pv -> decompress -> tar -> disk
-    # gdown -O - writes to stdout
-    gdown "$DATA_URL" -O - --quiet \
-        | $PV_CMD \
-        | $DECOMPRESS_CMD \
-        | tar $TAR_DECOMPRESS_OPT -x -C "$TARGET_DIR"
+    # Download to temporary file (more robust than stdout for Drive)
+    TEMP_ARCHIVE="$TARGET_DIR/temp_dataset.tar.zst"
+    echo "Downloading to $TEMP_ARCHIVE..."
+    
+    if gdown "$DATA_URL" -O "$TEMP_ARCHIVE"; then
+        echo "Download successful. Extracting..."
+        
+        # Extract from file
+        $PV_CMD "$TEMP_ARCHIVE" \
+            | $DECOMPRESS_CMD \
+            | tar $TAR_DECOMPRESS_OPT -x -C "$TARGET_DIR"
+            
+        # Cleanup
+        rm -f "$TEMP_ARCHIVE"
+    else
+        echo "ERROR: gdown failed."
+        exit 1
+    fi
 
 else
     echo "Detected standard URL. Using curl..."
