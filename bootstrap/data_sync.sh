@@ -1,0 +1,61 @@
+#!/bin/bash
+set -e
+
+# --- CONFIGURATION ---
+# Defaults to NYUv2, but customizable
+DATASET_NAME="${DATASET_NAME:-NYUv2}"
+TARGET_DIR="$HOME/datasets/$DATASET_NAME"
+SENTINEL="$TARGET_DIR/.complete"
+
+echo "=== [data_sync.sh] Checking data ($DATASET_NAME) ==="
+
+# 1. Validation
+if [ -z "$DATA_URL" ]; then
+    echo "ERROR: DATA_URL environment variable is not set."
+    echo "       Please export DATA_URL='https://...' before running."
+    exit 1
+fi
+
+# 2. Check Sentinel
+if [ -f "$SENTINEL" ]; then
+    echo "SUCCESS: Data already present ($SENTINEL found)."
+    exit 0
+fi
+
+# 3. Preparation & Cleanup
+if [ -d "$TARGET_DIR" ]; then
+    echo "WARNING: Target directory exists but sentinel is missing."
+    echo "         Assuming incomplete download. Syncing again..."
+    # We will simply extract over it. tar usually overwrites.
+else
+    echo "Creating target directory: $TARGET_DIR"
+    mkdir -p "$TARGET_DIR"
+fi
+
+echo "Downloading from: $DATA_URL"
+
+# 4. Download & Extract with Fallback
+# We use a subshell or simple if/else logic for fallback.
+# Check for unzstd availability for the 'nice' tar command.
+if command -v unzstd >/dev/null 2>&1; then
+    echo "Method: tar --use-compress-program=unzstd"
+    # curl -L --fail: fail on HTTP errors (404 etc)
+    # pv: progress bar if available, else cat (or skip if not installed, but assumed in apt list)
+    if command -v pv >/dev/null 2>&1; then
+        curl -L --fail "$DATA_URL" | pv | tar --use-compress-program=unzstd -x -C "$TARGET_DIR"
+    else
+        curl -L --fail "$DATA_URL" | tar --use-compress-program=unzstd -x -C "$TARGET_DIR"
+    fi
+else
+    echo "Method: zstd -dc | tar -x (fallback)"
+    if command -v pv >/dev/null 2>&1; then
+        curl -L --fail "$DATA_URL" | pv | zstd -dc | tar -x -C "$TARGET_DIR"
+    else
+        curl -L --fail "$DATA_URL" | zstd -dc | tar -x -C "$TARGET_DIR"
+    fi
+fi
+
+# 5. Mark Complete
+# Only reached if the commands above succeeded (set -e)
+touch "$SENTINEL"
+echo "SUCCESS: Data sync completed."
