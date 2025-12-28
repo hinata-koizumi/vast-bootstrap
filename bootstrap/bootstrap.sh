@@ -1,54 +1,106 @@
 #!/bin/bash
 set -euo pipefail
 
-DATASET_NAME="${DATASET_NAME:-NYUv2}"
-TARGET_DIR="$HOME/datasets/$DATASET_NAME"
-SENTINEL="$TARGET_DIR/.complete"
+echo "=== [bootstrap.sh] Starting Setup @ $(date -u) ==="
 
-echo "=== [data_sync.sh] Checking data ($DATASET_NAME) ==="
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+echo "Repo Root: $REPO_ROOT"
 
-if [ -z "${DATA_URL:-}" ]; then
-  echo "ERROR: DATA_URL is not set."
-  exit 1
-fi
+# -----------------------------
+# 0) System deps (minimum)
+# -----------------------------
+echo "=== [bootstrap.sh] Checking system dependencies ==="
+export DEBIAN_FRONTEND=noninteractive
 
-mkdir -p "$TARGET_DIR"
+need_install=()
+for cmd in curl git unzip file pv zstd; do
+  command -v "$cmd" >/dev/null 2>&1 || need_install+=("$cmd")
+done
 
-if [ -f "$SENTINEL" ]; then
-  echo "SUCCESS: Data already present ($SENTINEL found)."
-  exit 0
-fi
-
-# --- Ensure system tools (no venv dependency) ---
-
-# unzip
-if ! command -v unzip >/dev/null 2>&1; then
+if [ "${#need_install[@]}" -gt 0 ]; then
+  echo "Installing missing tools: ${need_install[*]}"
   apt-get update
-  apt-get install -y unzip
+  apt-get install -y "${need_install[@]}"
+else
+  echo "System tools present. Skipping apt-get."
 fi
 
-# gdown (system-level install)
-if ! command -v gdown >/dev/null 2>&1; then
-  if command -v uv >/dev/null 2>&1; then
-    # IMPORTANT: avoid venv requirement
-    uv pip install --system gdown
-  else
-    python3 -m pip install --upgrade pip
-    python3 -m pip install gdown
-  fi
+# -----------------------------
+# 1) Install uv (system-level, once per instance)
+# -----------------------------
+echo "=== [bootstrap.sh] Ensuring uv is installed ==="
+export PATH="$HOME/.local/bin:$PATH"
+
+if ! command -v uv >/dev/null 2>&1; then
+  echo "Installing uv..."
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  export PATH="$HOME/.local/bin:$PATH"
 fi
 
-TMP_ZIP="$(mktemp -p "$TARGET_DIR" dataset.XXXXXX.zip)"
-echo "Downloading ZIP to $TMP_ZIP"
-gdown --fuzzy "$DATA_URL" -O "$TMP_ZIP"
+uv --version || true
 
-echo "Extracting ZIP..."
-unzip -oq "$TMP_ZIP" -d "$TARGET_DIR"
-rm -f "$TMP_ZIP"
+# -----------------------------
+# 2) Create venv if missing
+# -----------------------------
+echo "=== [bootstrap.sh] Ensuring venv exists ==="
+if [ ! -d ".venv" ]; then
+  echo "Creating venv at $REPO_ROOT/.venv ..."
+  uv venv .venv
+else
+  echo "venv exists at $REPO_ROOT/.venv."
+fi
 
-# Mac junk cleanup (inside dataset folder)
-rm -rf "$TARGET_DIR/__MACOSX"
-find "$TARGET_DIR" -name ".DS_Store" -delete || true
+# Activate venv for current shell (optional but convenient)
+# NOTE: scripts called below should not rely on activation; we ensure PATH anyway.
+# shellcheck disable=SC1091
+source .venv/bin/activate
 
-touch "$SENTINEL"
-echo "SUCCESS: Data sync completed."
+echo "Python: $(python -V)"
+echo "Pip (venv): $(python -m pip -V || echo 'pip not found (will be installed by uv pip)')"
+
+# -----------------------------
+# 3) Sync python deps (lock file or requirements)
+# -----------------------------
+echo "=== [bootstrap.sh] Syncing Python dependencies (venv) ==="
+# pip itself & minimal tools
+uv pip install --upgrade pip wheel setuptools >/dev/null
+
+# If you later add requirements, this will be used.
+if [ -f "requirements.lock" ]; then
+  echo "Found requirements.lock. Installing..."
+  # requirements.lock が空でも落ちないようにする
+  uv pip install -r requirements.lock || true
+elif [ -f "requirements.txt" ]; then
+  echo "Found requirements.txt. Installing..."
+  uv pip install -r requirements.txt
+else
+  echo "No requirements file found. Skipping."
+fi
+
+# -----------------------------
+# 4) Mount / persistence setup (your existing script)
+# -----------------------------
+if [ -f "bootstrap/mounts.sh" ]; then
+  echo "=== [bootstrap.sh] Running mounts.sh ==="
+  bash bootstrap/mounts.sh
+fi
+
+# -----------------------------
+# 5) Data sync (must run inside a ready venv)
+# -----------------------------
+echo "=== [bootstrap.sh] Running data sync ==="
+# data_sync.sh が uv/gdown/unzip を使う前提でも、
+# ここまでで uv と .venv があるので確実に動く
+bash bootstrap/data_sync.sh
+
+# -----------------------------
+# 6) Shell config (optional)
+# -----------------------------
+if [ -f "bootstrap/shell.sh" ]; then
+  echo "=== [bootstrap.sh] Configuring user shell ==="
+  bash bootstrap/shell.sh || true
+fi
+
+echo "=== [bootstrap.sh] Setup Complete @ $(date -u) ==="
+echo "You can now start training."
